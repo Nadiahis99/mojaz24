@@ -1,10 +1,13 @@
 /**
  * مُوجز 24 — شريط الجلسة في الإدارة
- * أضف هذا الكود في نهاية admin.js (أو في script منفصل بعد auth.js)
+ * ✅ الإصلاح: يعتمد على MojazAuth مباشرة (يُحمَّل بعد Auth.js)
  */
 (function () {
-  // تأكد من وجود auth.js
-  if (typeof MojazAuth === 'undefined') return;
+  // انتظر حتى يكون MojazAuth جاهزاً
+  if (typeof MojazAuth === 'undefined') {
+    console.warn('Admin session bar: MojazAuth غير موجود — تأكد من تحميل Auth.js أولاً');
+    return;
+  }
 
   const session = MojazAuth.getSession();
   if (!session) return;
@@ -29,6 +32,7 @@
 
   const roleLabel = session.role === 'admin' ? '🛡️ مدير النظام' : '✍️ صحفي';
   const roleColor = session.role === 'admin' ? '#c8a96e' : '#38a169';
+  const avatarChar = session.avatar || (session.name ? session.name[0] : '؟');
 
   bar.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;">
@@ -37,9 +41,10 @@
         background:linear-gradient(135deg,#c8a96e,#a8893e);
         color:#fff;font-weight:800;font-size:1rem;
         display:flex;align-items:center;justify-content:center;
-      ">${session.avatar || session.name[0]}</div>
+        flex-shrink:0;
+      ">${avatarChar}</div>
       <div>
-        <div style="font-weight:700;color:var(--text,#1a1d2e);">${session.name}</div>
+        <div style="font-weight:700;color:var(--text,#1a1d2e);">${session.name || session.username}</div>
         <div style="color:${roleColor};font-size:.75rem;font-weight:600;">${roleLabel}</div>
       </div>
     </div>
@@ -65,28 +70,27 @@
   if (formCard && formCard.parentNode) {
     formCard.parentNode.insertBefore(bar, formCard);
   } else {
-    // fallback: أضفه في بداية main
     const main = document.querySelector('.site-main .container');
     if (main) main.prepend(bar);
   }
 
-  // زر الخروج
+  // زر الخروج — يستخدم MojazAuth.logout() مباشرة
   document.getElementById('adminLogoutBtn')?.addEventListener('click', function () {
     if (confirm('هل تريد تسجيل الخروج؟')) MojazAuth.logout();
   });
 
-  // hover
+  // hover effect
   const logoutBtn = document.getElementById('adminLogoutBtn');
   if (logoutBtn) {
-    logoutBtn.addEventListener('mouseenter', function() {
-      this.style.background = 'rgba(229,62,62,.08)';
-      this.style.color = '#e53e3e';
-      this.style.borderColor = 'rgba(229,62,62,.3)';
+    logoutBtn.addEventListener('mouseenter', function () {
+      this.style.background    = 'rgba(229,62,62,.08)';
+      this.style.color         = '#e53e3e';
+      this.style.borderColor   = 'rgba(229,62,62,.3)';
     });
-    logoutBtn.addEventListener('mouseleave', function() {
-      this.style.background = 'transparent';
-      this.style.color = 'var(--text-muted,#6b7280)';
-      this.style.borderColor = 'var(--border,#e2e4eb)';
+    logoutBtn.addEventListener('mouseleave', function () {
+      this.style.background    = 'transparent';
+      this.style.color         = 'var(--text-muted,#6b7280)';
+      this.style.borderColor   = 'var(--border,#e2e4eb)';
     });
   }
 })();
