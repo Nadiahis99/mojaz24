@@ -59,9 +59,17 @@ const User = mongoose.model("User", userSchema);
 
 // ─── Seed Users ───────────────────────────────────────────────────────────────
 async function seedUsers() {
-  if (mongoose.connection.readyState !== 1) return;
+  // انتظر حتى يكتمل الاتصال بالقاعدة
+  if (mongoose.connection.readyState !== 1) {
+    console.warn("Seed skipped — DB not ready");
+    return;
+  }
+
   const count = await User.countDocuments();
-  if (count > 0) return;
+  if (count > 0) {
+    console.log(`Seed skipped — ${count} users already exist`);
+    return;
+  }
 
   const users = [
     { username: "admin",       password: "admin2024", name: "مدير النظام",  role: "admin",      avatar: "م" },
@@ -74,7 +82,7 @@ async function seedUsers() {
   );
 
   await User.insertMany(hashed);
-  console.log("Default users seeded");
+  console.log("✅ Default users seeded successfully");
 }
 
 // ─── Database Connection ──────────────────────────────────────────────────────
@@ -85,15 +93,13 @@ async function connectDatabase() {
   }
   try {
     await mongoose.connect(process.env.MONGO_URI);
-    console.log("MongoDB connected");
+    console.log("✅ MongoDB connected");
+    // الـ seed تعمل هنا مباشرة بعد نجاح الاتصال — أكثر أماناً من حدث "open"
+    await seedUsers();
   } catch (err) {
     console.error("MongoDB connection failed:", err.message);
   }
 }
-
-mongoose.connection.once("open", () => {
-  seedUsers().catch((err) => console.error("Seed failed:", err.message));
-});
 
 function requireDB(res) {
   if (mongoose.connection.readyState === 1) return true;
@@ -140,16 +146,8 @@ app.get("/auth/users", async (req, res) => {
 });
 
 // ─── News Routes ──────────────────────────────────────────────────────────────
-app.get("/news", async (req, res) => {
-  if (!requireDB(res)) return;
-  try {
-    const filter = req.query.category ? { category: req.query.category } : {};
-    const news = await News.find(filter).sort({ createdAt: -1 });
-    res.json(news);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+// ⚠️ مهم: /news/categories يجب أن يكون قبل /news/:id
+// وإلا Express سيعامل "categories" كـ id وتفشل الطلبات
 
 app.get("/news/categories", async (req, res) => {
   if (!requireDB(res)) return;
@@ -160,6 +158,17 @@ app.get("/news/categories", async (req, res) => {
     const cats = {};
     result.forEach((r) => { cats[r._id] = r.count; });
     res.json(cats);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.get("/news", async (req, res) => {
+  if (!requireDB(res)) return;
+  try {
+    const filter = req.query.category ? { category: req.query.category } : {};
+    const news = await News.find(filter).sort({ createdAt: -1 });
+    res.json(news);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -224,5 +233,5 @@ app.use((req, res) => {
 // ─── Start Server ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 connectDatabase().finally(() => {
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 });
