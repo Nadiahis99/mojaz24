@@ -57,9 +57,31 @@ const userSchema = new mongoose.Schema(
 const News = mongoose.model("News", newsSchema);
 const User = mongoose.model("User", userSchema);
 
+// ─── Authorization Middleware ────────────────────────────────────────────────
+const protect = (roles = []) => {
+  return (req, res, next) => {
+    const userHeader = req.headers['x-user-session'];
+    
+    if (!userHeader) {
+      return res.status(401).json({ message: "غير مصرح لك، يرجى تسجيل الدخول أولاً" });
+    }
+
+    try {
+      const user = JSON.parse(userHeader);
+      // التحقق من الدور (Admin أو Journalist)
+      if (roles.length && !roles.includes(user.role)) {
+        return res.status(403).json({ message: "ليس لديك صلاحية للقيام بهذا الإجراء" });
+      }
+      req.user = user;
+      next();
+    } catch (e) {
+      return res.status(400).json({ message: "بيانات الجلسة غير صالحة" });
+    }
+  };
+};
+
 // ─── Seed Users ───────────────────────────────────────────────────────────────
 async function seedUsers() {
-  // انتظر حتى يكتمل الاتصال بالقاعدة
   if (mongoose.connection.readyState !== 1) {
     console.warn("Seed skipped — DB not ready");
     return;
@@ -94,7 +116,6 @@ async function connectDatabase() {
   try {
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ MongoDB connected");
-    // الـ seed تعمل هنا مباشرة بعد نجاح الاتصال — أكثر أماناً من حدث "open"
     await seedUsers();
   } catch (err) {
     console.error("MongoDB connection failed:", err.message);
@@ -135,7 +156,8 @@ app.post("/auth/login", async (req, res) => {
   }
 });
 
-app.get("/auth/users", async (req, res) => {
+// محمي: للآدمن فقط
+app.get("/auth/users", protect(["admin"]), async (req, res) => {
   if (!requireDB(res)) return;
   try {
     const users = await User.find({}, "-password");
@@ -146,8 +168,6 @@ app.get("/auth/users", async (req, res) => {
 });
 
 // ─── News Routes ──────────────────────────────────────────────────────────────
-// ⚠️ مهم: /news/categories يجب أن يكون قبل /news/:id
-// وإلا Express سيعامل "categories" كـ id وتفشل الطلبات
 
 app.get("/news/categories", async (req, res) => {
   if (!requireDB(res)) return;
@@ -185,7 +205,8 @@ app.get("/news/:id", async (req, res) => {
   }
 });
 
-app.post("/news", async (req, res) => {
+// محمي: للآدمن والصحفيين
+app.post("/news", protect(["admin", "journalist"]), async (req, res) => {
   if (!requireDB(res)) return;
   const { title, content, category, image, contentImage, video, videoFile, audioFile } = req.body;
   if (!title || !content)
@@ -199,7 +220,8 @@ app.post("/news", async (req, res) => {
   }
 });
 
-app.put("/news/:id", async (req, res) => {
+// محمي: للآدمن والصحفيين
+app.put("/news/:id", protect(["admin", "journalist"]), async (req, res) => {
   if (!requireDB(res)) return;
   try {
     const updated = await News.findByIdAndUpdate(
@@ -214,7 +236,8 @@ app.put("/news/:id", async (req, res) => {
   }
 });
 
-app.delete("/news/:id", async (req, res) => {
+// محمي: للآدمن فقط
+app.delete("/news/:id", protect(["admin"]), async (req, res) => {
   if (!requireDB(res)) return;
   try {
     const deleted = await News.findByIdAndDelete(req.params.id);
