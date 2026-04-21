@@ -1,15 +1,14 @@
 /**
  * مُوجز 24 — API Client (Final Version)
- * تم التعديل ليتوافق مع مسارات Vercel وإرسال بيانات الأمان
+ * تم التعديل لضمان التوافق التام مع Vercel Rewrites
  */
 
 const MojazAPI = (() => {
-  // تحديد العنوان الأساسي: إذا كان محلياً نستخدم منفذ 3000، وإذا كان مرفوعاً نستخدم الدومين الحالي
+  // تحديد العنوان الأساسي
   const BASE = window.location.hostname === 'localhost' 
                ? 'http://localhost:3000' 
                : window.location.origin;
 
-  // دالة جلب الجلسة من sessionStorage
   function getSession() {
     try {
       const raw = sessionStorage.getItem('mojaz24-session');
@@ -17,21 +16,18 @@ const MojazAPI = (() => {
     } catch { return null; }
   }
 
-  // الدالة المركزية لإرسال الطلبات للسيرفر
   async function request(method, path, body) {
     const session = getSession();
     
-    /**
-     * تعديل جوهري: إضافة /api للمسار ليتوافق مع إعدادات vercel.json
-     * هذا يضمن أن الطلب يذهب لملف backend/server.js وليس لمجلد الفرونت اند
-     */
-    const apiPath = `/api${path}`;
+    // تأكد من أن المسار يبدأ بـ /api ليتوافق مع vercel.json
+    // قمنا بإضافة شرط لمنع تكرار كلمة api إذا كانت موجودة بالفعل في الـ path
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    const apiPath = cleanPath.startsWith('/api') ? cleanPath : `/api${cleanPath}`;
 
     const opts = {
       method,
       headers: { 
         'Content-Type': 'application/json',
-        // إرسال بيانات المستخدم لكي يتحقق السيرفر من الصلاحيات (Admin/Journalist)
         'x-user-session': session ? JSON.stringify(session) : ''
       }
     };
@@ -39,6 +35,7 @@ const MojazAPI = (() => {
     if (body) opts.body = JSON.stringify(body);
 
     try {
+      // إرسال الطلب للرابط الكامل
       const res = await fetch(BASE + apiPath, opts);
 
       if (!res.ok) {
@@ -56,7 +53,6 @@ const MojazAPI = (() => {
 
   async function login(username, password) {
     try {
-      // المسار سيصبح تلقائياً /api/auth/login
       const data = await request('POST', '/auth/login', { username, password });
       if (data.success) {
         sessionStorage.setItem('mojaz24-session', JSON.stringify(data.session));
@@ -86,7 +82,6 @@ const MojazAPI = (() => {
 
   // ── News CRUD (إدارة الأخبار) ─────────────────────────────────────────────
 
-  // جلب كل الأخبار (أو حسب القسم)
   function getAll(category) { 
     const query = category ? `?category=${encodeURIComponent(category)}` : '';
     return request('GET', '/news' + query); 
@@ -100,12 +95,9 @@ const MojazAPI = (() => {
   function getByCategory(category) { return getAll(category); }
 
   return {
-    // Auth
     login, logout, getSession, isLoggedIn, canWrite, isAdmin, requireAuth,
-    // News
     getAll, getById, getCategories, add, update, remove, getByCategory
   };
 })();
 
-// إتاحة الكود للاستخدام في جميع صفحات المشروع
 window.MojazAPI = MojazAPI;
