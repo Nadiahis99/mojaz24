@@ -4,7 +4,9 @@
  */
 
 const MojazAPI = (() => {
-  const BASE = window.location.origin;
+  const BASE = window.location.hostname === 'localhost' 
+             ? 'http://localhost:3000' 
+             : window.location.origin;
 
   // دالة جلب الجلسة محلياً (نستخدمها داخل الـ request)
   function getSession() {
