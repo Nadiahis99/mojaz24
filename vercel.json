@@ -1,15 +1,9 @@
 {
   "version": 2,
-  "functions": {
-    "backend/server.js": {
-      "memory": 512,
-      "maxDuration": 10
-    }
-  },
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "/backend/server.js"
+      "destination": "/api/[...path]"
     },
     {
       "source": "/(.*)",
