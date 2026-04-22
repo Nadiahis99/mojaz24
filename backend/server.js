@@ -13,13 +13,16 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// ─── Static Frontend ──────────────────────────────────────────────────────────
-app.use(express.static(path.join(__dirname, "../frontend")));
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/index.html"));
-});
+// ─── Static Frontend (للتشغيل المحلي فقط، Vercel يتعامل معها تلقائياً) ──────
+if (process.env.NODE_ENV !== "production") {
+  app.use(express.static(path.join(__dirname, "../frontend")));
+  app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "../frontend/index.html"));
+  });
+}
 
-app.get("/health", (req, res) => {
+// ─── Health Check ─────────────────────────────────────────────────────────────
+app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     databaseReady: mongoose.connection.readyState === 1
@@ -68,7 +71,6 @@ const protect = (roles = []) => {
 
     try {
       const user = JSON.parse(userHeader);
-      // التحقق من الدور (Admin أو Journalist)
       if (roles.length && !roles.includes(user.role)) {
         return res.status(403).json({ message: "ليس لديك صلاحية للقيام بهذا الإجراء" });
       }
@@ -128,8 +130,11 @@ function requireDB(res) {
   return false;
 }
 
-// ─── Auth Routes ──────────────────────────────────────────────────────────────
-app.post("/auth/login", async (req, res) => {
+// ─── Router (كل الـ routes تحت /api) ─────────────────────────────────────────
+const router = express.Router();
+
+// Auth
+router.post("/auth/login", async (req, res) => {
   if (!requireDB(res)) return;
   const { username, password } = req.body;
   if (!username || !password)
@@ -156,8 +161,8 @@ app.post("/auth/login", async (req, res) => {
   }
 });
 
-// محمي: للآدمن فقط
-app.get("/auth/users", protect(["admin"]), async (req, res) => {
+// ✅ محمي: للآدمن فقط
+router.get("/auth/users", protect(["admin"]), async (req, res) => {
   if (!requireDB(res)) return;
   try {
     const users = await User.find({}, "-password");
@@ -167,9 +172,8 @@ app.get("/auth/users", protect(["admin"]), async (req, res) => {
   }
 });
 
-// ─── News Routes ──────────────────────────────────────────────────────────────
-
-app.get("/news/categories", async (req, res) => {
+// ✅ مهم: /news/categories قبل /news/:id لتجنب تفسير "categories" كـ id
+router.get("/news/categories", async (req, res) => {
   if (!requireDB(res)) return;
   try {
     const result = await News.aggregate([
@@ -183,7 +187,7 @@ app.get("/news/categories", async (req, res) => {
   }
 });
 
-app.get("/news", async (req, res) => {
+router.get("/news", async (req, res) => {
   if (!requireDB(res)) return;
   try {
     const filter = req.query.category ? { category: req.query.category } : {};
@@ -194,7 +198,7 @@ app.get("/news", async (req, res) => {
   }
 });
 
-app.get("/news/:id", async (req, res) => {
+router.get("/news/:id", async (req, res) => {
   if (!requireDB(res)) return;
   try {
     const news = await News.findById(req.params.id);
@@ -205,8 +209,7 @@ app.get("/news/:id", async (req, res) => {
   }
 });
 
-// محمي: للآدمن والصحفيين
-app.post("/news", protect(["admin", "journalist"]), async (req, res) => {
+router.post("/news", protect(["admin", "journalist"]), async (req, res) => {
   if (!requireDB(res)) return;
   const { title, content, category, image, contentImage, video, videoFile, audioFile } = req.body;
   if (!title || !content)
@@ -220,8 +223,7 @@ app.post("/news", protect(["admin", "journalist"]), async (req, res) => {
   }
 });
 
-// محمي: للآدمن والصحفيين
-app.put("/news/:id", protect(["admin", "journalist"]), async (req, res) => {
+router.put("/news/:id", protect(["admin", "journalist"]), async (req, res) => {
   if (!requireDB(res)) return;
   try {
     const updated = await News.findByIdAndUpdate(
@@ -236,8 +238,7 @@ app.put("/news/:id", protect(["admin", "journalist"]), async (req, res) => {
   }
 });
 
-// محمي: للآدمن فقط
-app.delete("/news/:id", protect(["admin"]), async (req, res) => {
+router.delete("/news/:id", protect(["admin"]), async (req, res) => {
   if (!requireDB(res)) return;
   try {
     const deleted = await News.findByIdAndDelete(req.params.id);
@@ -248,13 +249,24 @@ app.delete("/news/:id", protect(["admin"]), async (req, res) => {
   }
 });
 
+// ─── Mount Router على /api ────────────────────────────────────────────────────
+app.use("/api", router);
+
 // ─── 404 Fallback ─────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ message: `المسار ${req.path} غير موجود` });
 });
 
-// ─── Start Server ─────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3000;
-connectDatabase().finally(() => {
-  app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-});
+// ─── Start Server (للتشغيل المحلي — Vercel يستدعي الـ handler مباشرة) ────────
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  connectDatabase().finally(() => {
+    app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+  });
+}
+
+// ─── Export للـ Vercel ────────────────────────────────────────────────────────
+module.exports = async (req, res) => {
+  await connectDatabase();
+  app(req, res);
+};
